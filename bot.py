@@ -1,5 +1,4 @@
-# bot.py
-# Full Telegram bot for mass reporting with user authorization.
+# bot.py – corrected version
 
 import os
 import logging
@@ -9,14 +8,15 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
+from telethon.tl.functions.messages import ReportPeerRequest  # <--- ADDED
 
-# --- Environment Variables (set in Render) ---
+# --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
-SESSION_STRING = os.environ.get("SESSION_STRING")  # From generator.py
+SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
-# ---------------------------------------------
+# ----------------------------
 
 telethon_client = None
 logging.basicConfig(level=logging.INFO)
@@ -40,12 +40,12 @@ async def start_telethon():
         logging.error(f"Failed to connect Telethon: {e}")
         return False
 
-# --- Bot Command Handlers ---
+# --- Command Handlers ---
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
-        await update.message.reply_text("❌ You are not authorized to use this bot.")
+        await update.message.reply_text("❌ Unauthorized.")
         return
 
     await update.message.reply_text(
@@ -88,7 +88,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = args[0].replace("@", "").strip()
     reason = args[1].strip().lower()
     count = int(args[2]) if len(args) > 2 and args[2].isdigit() else 100
-    count = min(count, 500)  # Safety cap
+    count = min(count, 500)
 
     if not telethon_client or not telethon_client.is_connected():
         await update.message.reply_text("❌ Reporting client is not ready. Check `/status`.")
@@ -96,7 +96,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"🔄 Starting report job...\n"
-        f"Target: `@{target}`\n"
+        f"Target: `{target}`\n"
         f"Reason: `{reason}`\n"
         f"Count: `{count}`\n\n"
         f"*This may take a few minutes.*",
@@ -109,7 +109,9 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             successful = 0
             for i in range(count):
                 try:
-                    await telethon_client.report(entity, reason=reason)
+                    # --- FIXED LINE ---
+                    await telethon_client.invoke(ReportPeerRequest(peer=entity, reason=reason))
+                    # --------------------
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(
@@ -120,11 +122,11 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     logging.error(f"Report failed: {e}")
                     await asyncio.sleep(1)
-                await asyncio.sleep(0.8)  # Slow down
+                await asyncio.sleep(0.8)
 
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"✅ **Finished!**\nSent `{successful}` reports to `@{target}` for `{reason}`.",
+                text=f"✅ **Finished!**\nSent `{successful}` reports to `{target}` for `{reason}`.",
                 parse_mode="Markdown"
             )
         except Exception as e:
@@ -136,7 +138,8 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
-# --- Main Entry Point ---
+# --- Main ---
+
 async def main():
     if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
         logging.error("Missing required environment variables!")
