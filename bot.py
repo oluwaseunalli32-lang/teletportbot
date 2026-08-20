@@ -1,5 +1,3 @@
-# bot.py – Full working version with delay fix for Conflict error
-
 import os
 import logging
 import asyncio
@@ -8,14 +6,13 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
+from telethon.tl.functions.messages import Report  # <-- Correct import
 
-# --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
-# ----------------------------
 
 telethon_client = None
 logging.basicConfig(level=logging.INFO)
@@ -39,14 +36,11 @@ async def start_telethon():
         logging.error(f"Failed to connect Telethon: {e}")
         return False
 
-# --- Command Handlers ---
-
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         await update.message.reply_text("❌ Unauthorized.")
         return
-
     await update.message.reply_text(
         "✅ **Report Bot Active**\n\n"
         "**Usage:**\n"
@@ -63,11 +57,10 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(user_id):
         await update.message.reply_text("❌ Unauthorized.")
         return
-
     if telethon_client and telethon_client.is_connected():
-        await update.message.reply_text("✅ Reporting account is **connected** and ready.", parse_mode="Markdown")
+        await update.message.reply_text("✅ Reporting account is connected and ready.", parse_mode="Markdown")
     else:
-        await update.message.reply_text("❌ Reporting account is **disconnected**. Check your SESSION_STRING.", parse_mode="Markdown")
+        await update.message.reply_text("❌ Reporting account is disconnected. Check SESSION_STRING.", parse_mode="Markdown")
 
 async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -94,11 +87,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        f"🔄 Starting report job...\n"
-        f"Target: `{target}`\n"
-        f"Reason: `{reason}`\n"
-        f"Count: `{count}`\n\n"
-        f"*This may take a few minutes.*",
+        f"🔄 Starting report job...\nTarget: `{target}`\nReason: `{reason}`\nCount: `{count}`\n\n*This may take a few minutes.*",
         parse_mode="Markdown"
     )
 
@@ -106,40 +95,27 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             entity = await telethon_client.get_entity(target)
             successful = 0
-
             for i in range(count):
                 try:
-                    # The correct reporting method
-                    await telethon_client.report(entity, reason=reason)
+                    # --- FIXED: Use invoke(Report(...)) instead of .report() ---
+                    await telethon_client.invoke(Report(peer=entity, reason=reason))
                     successful += 1
                 except FloodWaitError as e:
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text=f"⏳ Rate limited. Waiting {e.seconds} seconds..."
-                    )
+                    await context.bot.send_message(chat_id=user_id, text=f"⏳ Rate limited. Waiting {e.seconds} seconds...")
                     await asyncio.sleep(e.seconds)
                 except Exception as e:
                     logging.error(f"Report failed: {e}")
                     await asyncio.sleep(1)
-
-                # Slow down to avoid being flagged
                 await asyncio.sleep(0.8)
-
             await context.bot.send_message(
                 chat_id=user_id,
                 text=f"✅ **Finished!**\nSent `{successful}` reports to `{target}` for `{reason}`.",
                 parse_mode="Markdown"
             )
         except Exception as e:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"❌ **Error:** `{str(e)}`",
-                parse_mode="Markdown"
-            )
+            await context.bot.send_message(chat_id=user_id, text=f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
 
     asyncio.create_task(do_reports())
-
-# --- Main ---
 
 async def main():
     if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
@@ -157,19 +133,7 @@ async def main():
     app.add_handler(CommandHandler("report", cmd_report))
 
     logging.info("Bot is starting...")
-    await app.initialize()
-    await app.start()
-    
-    # --- DELAY FIX: Give Telegram time to close old connections ---
-    logging.info("Waiting 2 seconds to avoid conflict...")
-    await asyncio.sleep(2)
-    # --------------------------------------------------------------
-
-    await app.updater.start_polling()
-
-    # Keep the bot running
-    while True:
-        await asyncio.sleep(10)
+    await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
