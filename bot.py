@@ -1,4 +1,4 @@
-# bot.py – corrected version
+# bot.py – FULLY FIXED
 
 import os
 import logging
@@ -8,7 +8,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
-from telethon.tl.functions.messages import ReportPeerRequest  # <--- ADDED
 
 # --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -105,13 +104,15 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     async def do_reports():
         try:
+            # Get the target entity
             entity = await telethon_client.get_entity(target)
             successful = 0
+
             for i in range(count):
                 try:
-                    # --- FIXED LINE ---
-                    await telethon_client.invoke(ReportPeerRequest(peer=entity, reason=reason))
-                    # --------------------
+                    # --- FIXED: Using the correct report method ---
+                    await telethon_client.report(entity, reason=reason)
+                    # ---------------------------------------------
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(
@@ -122,6 +123,8 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     logging.error(f"Report failed: {e}")
                     await asyncio.sleep(1)
+
+                # Slow down to avoid being flagged
                 await asyncio.sleep(0.8)
 
             await context.bot.send_message(
