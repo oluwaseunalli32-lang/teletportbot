@@ -6,7 +6,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
-from telethon.tl.functions.messages import Report  # <-- Correct import
+from telethon.tl.functions.messages import ReportPeer  # <-- Correct import
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
@@ -97,8 +97,8 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             successful = 0
             for i in range(count):
                 try:
-                    # --- FIXED: Use invoke(Report(...)) instead of .report() ---
-                    await telethon_client.invoke(Report(peer=entity, reason=reason))
+                    # --- CORRECT LOW-LEVEL CALL ---
+                    await telethon_client.invoke(ReportPeer(peer=entity, reason=reason))
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(chat_id=user_id, text=f"⏳ Rate limited. Waiting {e.seconds} seconds...")
@@ -106,7 +106,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     logging.error(f"Report failed: {e}")
                     await asyncio.sleep(1)
-                await asyncio.sleep(0.8)
+                await asyncio.sleep(0.8)  # Prevent hitting rate limits
             await context.bot.send_message(
                 chat_id=user_id,
                 text=f"✅ **Finished!**\nSent `{successful}` reports to `{target}` for `{reason}`.",
