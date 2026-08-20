@@ -1,4 +1,4 @@
-# bot.py – FULLY FIXED
+# bot.py – Full working version with delay fix for Conflict error
 
 import os
 import logging
@@ -104,15 +104,13 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     async def do_reports():
         try:
-            # Get the target entity
             entity = await telethon_client.get_entity(target)
             successful = 0
 
             for i in range(count):
                 try:
-                    # --- FIXED: Using the correct report method ---
+                    # The correct reporting method
                     await telethon_client.report(entity, reason=reason)
-                    # ---------------------------------------------
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(
@@ -161,8 +159,15 @@ async def main():
     logging.info("Bot is starting...")
     await app.initialize()
     await app.start()
+    
+    # --- DELAY FIX: Give Telegram time to close old connections ---
+    logging.info("Waiting 2 seconds to avoid conflict...")
+    await asyncio.sleep(2)
+    # --------------------------------------------------------------
+
     await app.updater.start_polling()
 
+    # Keep the bot running
     while True:
         await asyncio.sleep(10)
 
