@@ -13,7 +13,7 @@ API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # e.g., https://your-app.onrender.com
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 PORT = int(os.environ.get("PORT", 8443))
 # -----------------------------
 
@@ -119,10 +119,9 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
-# --- Main Entry Point for Webhook ---
 async def main():
     if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING, WEBHOOK_URL]):
-        logging.error("Missing required environment variables (BOT_TOKEN, API_ID, API_HASH, SESSION_STRING, WEBHOOK_URL)!")
+        logging.error("Missing required environment variables!")
         return
 
     if not ALLOWED_USERS:
@@ -136,12 +135,11 @@ async def main():
     app.add_handler(CommandHandler("report", cmd_report))
 
     logging.info("Starting webhook server...")
-    # Run webhook on all interfaces, with the public URL
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=BOT_TOKEN,          # optional: path to append to webhook URL
-        webhook_url=WEBHOOK_URL + "/" + BOT_TOKEN   # must match the url_path
+        url_path=BOT_TOKEN,
+        webhook_url=WEBHOOK_URL + "/" + BOT_TOKEN
     )
 
 if __name__ == "__main__":
