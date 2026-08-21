@@ -6,13 +6,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
-from telethon.tl.functions.messages import Report  # <-- FIXED IMPORT
-from telethon.tl.types import (
-    InputReportReasonSpam,
-    InputReportReasonOther,
-    InputReportReasonViolence,
-    InputReportReasonPornography,
-)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
@@ -44,15 +37,6 @@ async def get_telethon_client():
             logging.error(f"Failed to connect Telethon: {e}")
             return None
     return telethon_client
-
-def get_report_reason(reason_str: str):
-    reason_map = {
-        "spam": InputReportReasonSpam(),
-        "fake_account": InputReportReasonOther(),
-        "violence": InputReportReasonViolence(),
-        "pornography": InputReportReasonPornography(),
-    }
-    return reason_map.get(reason_str, InputReportReasonOther())
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -117,7 +101,8 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             successful = 0
             for i in range(count):
                 try:
-                    await client(Report(peer=entity, id=[], reason=get_report_reason(reason_str)))  # <-- FIXED
+                    # --- USE client.report() – WORKS IN Telethon 1.44.0 ---
+                    await client.report(entity, reason=reason_str)
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(chat_id=user_id, text=f"⏳ Rate limited. Waiting {e.seconds} seconds...")
