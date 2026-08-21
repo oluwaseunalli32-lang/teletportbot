@@ -7,13 +7,11 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 
-# --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
-# -----------------------------
 
 telethon_client = None
 logging.basicConfig(level=logging.INFO)
@@ -98,7 +96,6 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             successful = 0
             for i in range(count):
                 try:
-                    # --- THIS WORKS IN TELEthon 1.37+ ---
                     await telethon_client.report(entity, reason=reason)
                     successful += 1
                 except FloodWaitError as e:
@@ -118,7 +115,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
-# --- Main Entry Point (Manual Polling) ---
+# --- MANUAL POLLING (Fixes event loop conflict) ---
 async def main():
     if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
         logging.error("Missing required environment variables!")
@@ -137,8 +134,7 @@ async def main():
     logging.info("Bot is starting...")
     await app.initialize()
     await app.start()
-    # Small delay to let Telegram clean up any stale connections (optional)
-    await asyncio.sleep(1)
+    await asyncio.sleep(1)  # Small delay to avoid conflict
     await app.updater.start_polling()
 
     # Keep the bot alive
