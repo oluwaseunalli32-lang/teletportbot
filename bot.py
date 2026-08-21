@@ -115,7 +115,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
-# --- MANUAL POLLING (Fixes event loop conflict) ---
+# --- Main with explicit webhook cleanup ---
 async def main():
     if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
         logging.error("Missing required environment variables!")
@@ -132,10 +132,17 @@ async def main():
     app.add_handler(CommandHandler("report", cmd_report))
 
     logging.info("Bot is starting...")
+
+    # --- Explicitly delete any existing webhook and drop pending updates ---
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    logging.info("Webhook cleared, waiting 3 seconds...")
+    await asyncio.sleep(3)   # Give Telegram time to close any stale connections
+
     await app.initialize()
     await app.start()
-    await asyncio.sleep(1)  # Small delay to avoid conflict
-    await app.updater.start_polling()
+
+    # Start polling with drop_pending_updates=True (extra safety)
+    await app.updater.start_polling(drop_pending_updates=True)
 
     # Keep the bot alive
     while True:
