@@ -115,7 +115,6 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
-# --- Main with explicit webhook cleanup ---
 async def main():
     if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
         logging.error("Missing required environment variables!")
@@ -133,18 +132,27 @@ async def main():
 
     logging.info("Bot is starting...")
 
-    # --- Explicitly delete any existing webhook and drop pending updates ---
+    # ---- AGGRESSIVE CLEANUP ----
+    # 1. Delete webhook with drop_pending_updates=True
     await app.bot.delete_webhook(drop_pending_updates=True)
-    logging.info("Webhook cleared, waiting 3 seconds...")
-    await asyncio.sleep(3)   # Give Telegram time to close any stale connections
+    logging.info("Webhook deleted.")
+
+    # 2. Explicitly fetch and discard any pending updates (force close long polling)
+    await app.bot.get_updates(offset=-1, timeout=1)
+    logging.info("Pending updates discarded.")
+
+    # 3. Wait extra time for Telegram to release the connection
+    logging.info("Waiting 10 seconds for cleanup...")
+    await asyncio.sleep(10)
+    # -----------------------------
 
     await app.initialize()
     await app.start()
 
-    # Start polling with drop_pending_updates=True (extra safety)
+    # Start polling with drop_pending_updates=True as extra safety
     await app.updater.start_polling(drop_pending_updates=True)
 
-    # Keep the bot alive
+    # Keep alive
     while True:
         await asyncio.sleep(10)
 
