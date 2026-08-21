@@ -14,11 +14,15 @@ from telethon.tl.types import (
     InputReportReasonPornography,
 )
 
+# --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # e.g., https://your-app.onrender.com
+PORT = int(os.environ.get("PORT", 8443))
+# -----------------------------
 
 telethon_client = None
 logging.basicConfig(level=logging.INFO)
@@ -44,10 +48,9 @@ async def get_telethon_client():
     return telethon_client
 
 def get_report_reason(reason_str: str):
-    """Map user-provided reason string to Telethon ReportReason type."""
     reason_map = {
         "spam": InputReportReasonSpam(),
-        "fake_account": InputReportReasonOther(),  # Use Other for impersonation
+        "fake_account": InputReportReasonOther(),
         "violence": InputReportReasonViolence(),
         "pornography": InputReportReasonPornography(),
     }
@@ -116,10 +119,9 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             successful = 0
             for i in range(count):
                 try:
-                    # --- CORRECT REPORTING CALL ---
                     await client(ReportRequest(
                         peer=entity,
-                        id=[],   # Empty list = report the peer itself
+                        id=[],
                         reason=get_report_reason(reason_str)
                     ))
                     successful += 1
@@ -129,7 +131,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     logging.error(f"Report failed: {e}")
                     await asyncio.sleep(1)
-                await asyncio.sleep(0.8)   # Rate limiting
+                await asyncio.sleep(0.8)
             await context.bot.send_message(
                 chat_id=user_id,
                 text=f"✅ **Finished!**\nSent `{successful}` reports to `{target}` for `{reason_str}`.",
@@ -141,8 +143,8 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(do_reports())
 
 async def main():
-    if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
-        logging.error("Missing required environment variables!")
+    if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING, WEBHOOK_URL]):
+        logging.error("Missing required environment variables (BOT_TOKEN, API_ID, API_HASH, SESSION_STRING, WEBHOOK_URL)!")
         return
 
     if not ALLOWED_USERS:
@@ -153,17 +155,13 @@ async def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("report", cmd_report))
 
-    logging.info("Deleting webhook...")
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    logging.info("Webhook deleted. Starting polling...")
-
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(drop_pending_updates=True)
-
-    # Keep the bot alive
-    while True:
-        await asyncio.sleep(10)
+    logging.info(f"Starting webhook server on port {PORT}...")
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=BOT_TOKEN,
+        webhook_url=WEBHOOK_URL + "/" + BOT_TOKEN
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
