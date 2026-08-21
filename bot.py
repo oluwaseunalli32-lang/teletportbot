@@ -7,11 +7,13 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 
+# --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
+# -----------------------------
 
 telethon_client = None
 logging.basicConfig(level=logging.INFO)
@@ -96,21 +98,16 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             successful = 0
             for i in range(count):
                 try:
-                    # --- USE THE BUILT-IN report METHOD (works in 1.37+) ---
+                    # --- THIS WORKS IN TELEthon 1.37+ ---
                     await telethon_client.report(entity, reason=reason)
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(chat_id=user_id, text=f"⏳ Rate limited. Waiting {e.seconds} seconds...")
                     await asyncio.sleep(e.seconds)
-                except AttributeError:
-                    # Fallback: if 'report' is missing, use invoke (should not happen)
-                    from telethon.tl.functions.messages import Report
-                    await telethon_client.invoke(Report(peer=entity, id=[], reason=reason))
-                    successful += 1
                 except Exception as e:
                     logging.error(f"Report failed: {e}")
                     await asyncio.sleep(1)
-                await asyncio.sleep(0.8)  # Prevent hitting rate limits
+                await asyncio.sleep(0.8)
             await context.bot.send_message(
                 chat_id=user_id,
                 text=f"✅ **Finished!**\nSent `{successful}` reports to `{target}` for `{reason}`.",
@@ -121,6 +118,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
+# --- Main Entry Point (Manual Polling) ---
 async def main():
     if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
         logging.error("Missing required environment variables!")
@@ -137,7 +135,15 @@ async def main():
     app.add_handler(CommandHandler("report", cmd_report))
 
     logging.info("Bot is starting...")
-    await app.run_polling()
+    await app.initialize()
+    await app.start()
+    # Small delay to let Telegram clean up any stale connections (optional)
+    await asyncio.sleep(1)
+    await app.updater.start_polling()
+
+    # Keep the bot alive
+    while True:
+        await asyncio.sleep(10)
 
 if __name__ == "__main__":
     asyncio.run(main())
