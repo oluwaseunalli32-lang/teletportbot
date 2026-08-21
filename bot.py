@@ -7,13 +7,11 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 
-# --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
-# -----------------------------
 
 telethon_client = None
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +21,6 @@ def is_authorized(user_id: int) -> bool:
         return False
     return user_id in ALLOWED_USERS
 
-# --- Lazy initialisation of Telethon client ---
 async def get_telethon_client():
     global telethon_client
     if telethon_client is None:
@@ -38,8 +35,6 @@ async def get_telethon_client():
             logging.error(f"Failed to connect Telethon: {e}")
             return None
     return telethon_client
-
-# --- Command Handlers ---
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -123,21 +118,31 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
-# --- Main Entry Point (No nested loop) ---
-if __name__ == "__main__":
-    # Build the application
+async def main():
+    if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
+        logging.error("Missing required environment variables!")
+        return
+
+    if not ALLOWED_USERS:
+        logging.warning("ALLOWED_USERS is empty! No one can use the bot.")
+
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("report", cmd_report))
 
-    # Delete any existing webhook and drop pending updates – prevents 409
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(app.bot.delete_webhook(drop_pending_updates=True))
-    loop.close()
+    # Delete webhook to avoid 409 Conflict
+    logging.info("Deleting webhook...")
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    logging.info("Webhook deleted. Starting polling...")
 
-    # Now start polling – this runs its own loop and won't conflict
-    logging.info("Bot starting with polling...")
-    app.run_polling(drop_pending_updates=True)
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling(drop_pending_updates=True)
+
+    # Keep the bot alive
+    while True:
+        await asyncio.sleep(10)
+
+if __name__ == "__main__":
+    asyncio.run(main())
