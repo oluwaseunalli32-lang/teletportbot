@@ -3,7 +3,7 @@ import logging
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from telethon import TelegramClient
+from telethon import TelegramClient, functions, types
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 
@@ -37,6 +37,16 @@ async def get_telethon_client():
             logging.error(f"Failed to connect Telethon: {e}")
             return None
     return telethon_client
+
+def get_report_reason(reason_str: str):
+    """Map user-provided reason to Telethon ReportReason type."""
+    reason_map = {
+        "spam": types.InputReportReasonSpam(),
+        "fake_account": types.InputReportReasonOther(),
+        "violence": types.InputReportReasonViolence(),
+        "pornography": types.InputReportReasonPornography(),
+    }
+    return reason_map.get(reason_str, types.InputReportReasonOther())
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -101,8 +111,12 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             successful = 0
             for i in range(count):
                 try:
-                    # --- USE client.report() – WORKS IN Telethon 1.44.0 ---
-                    await client.report(entity, reason=reason_str)
+                    # --- CORRECT WAY to report a channel in Telethon 1.44.0 ---
+                    await client(functions.account.ReportPeerRequest(
+                        peer=entity,
+                        reason=get_report_reason(reason_str),
+                        message=""
+                    ))
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(chat_id=user_id, text=f"⏳ Rate limited. Waiting {e.seconds} seconds...")
