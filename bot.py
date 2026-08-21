@@ -7,11 +7,15 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 
+# --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # e.g., https://your-app.onrender.com
+PORT = int(os.environ.get("PORT", 8443))
+# -----------------------------
 
 telethon_client = None
 logging.basicConfig(level=logging.INFO)
@@ -115,9 +119,10 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
+# --- Main Entry Point for Webhook ---
 async def main():
-    if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING]):
-        logging.error("Missing required environment variables!")
+    if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING, WEBHOOK_URL]):
+        logging.error("Missing required environment variables (BOT_TOKEN, API_ID, API_HASH, SESSION_STRING, WEBHOOK_URL)!")
         return
 
     if not ALLOWED_USERS:
@@ -130,31 +135,14 @@ async def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("report", cmd_report))
 
-    logging.info("Bot is starting...")
-
-    # ---- AGGRESSIVE CLEANUP ----
-    # 1. Delete webhook with drop_pending_updates=True
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    logging.info("Webhook deleted.")
-
-    # 2. Explicitly fetch and discard any pending updates (force close long polling)
-    await app.bot.get_updates(offset=-1, timeout=1)
-    logging.info("Pending updates discarded.")
-
-    # 3. Wait extra time for Telegram to release the connection
-    logging.info("Waiting 10 seconds for cleanup...")
-    await asyncio.sleep(10)
-    # -----------------------------
-
-    await app.initialize()
-    await app.start()
-
-    # Start polling with drop_pending_updates=True as extra safety
-    await app.updater.start_polling(drop_pending_updates=True)
-
-    # Keep alive
-    while True:
-        await asyncio.sleep(10)
+    logging.info("Starting webhook server...")
+    # Run webhook on all interfaces, with the public URL
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=BOT_TOKEN,          # optional: path to append to webhook URL
+        webhook_url=WEBHOOK_URL + "/" + BOT_TOKEN   # must match the url_path
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
