@@ -13,8 +13,6 @@ API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-PORT = int(os.environ.get("PORT", 8443))
 # -----------------------------
 
 telethon_client = None
@@ -25,19 +23,23 @@ def is_authorized(user_id: int) -> bool:
         return False
     return user_id in ALLOWED_USERS
 
-async def start_telethon():
+# --- Lazy initialisation of Telethon client ---
+async def get_telethon_client():
     global telethon_client
-    if not SESSION_STRING:
-        logging.error("SESSION_STRING is missing!")
-        return False
-    try:
-        telethon_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-        await telethon_client.start()
-        logging.info("Telethon client connected successfully.")
-        return True
-    except Exception as e:
-        logging.error(f"Failed to connect Telethon: {e}")
-        return False
+    if telethon_client is None:
+        if not SESSION_STRING:
+            logging.error("SESSION_STRING is missing!")
+            return None
+        try:
+            telethon_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+            await telethon_client.start()
+            logging.info("Telethon client connected successfully.")
+        except Exception as e:
+            logging.error(f"Failed to connect Telethon: {e}")
+            return None
+    return telethon_client
+
+# --- Command Handlers ---
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -60,7 +62,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(user_id):
         await update.message.reply_text("❌ Unauthorized.")
         return
-    if telethon_client and telethon_client.is_connected():
+    client = await get_telethon_client()
+    if client and client.is_connected():
         await update.message.reply_text("✅ Reporting account is connected and ready.", parse_mode="Markdown")
     else:
         await update.message.reply_text("❌ Reporting account is disconnected. Check SESSION_STRING.", parse_mode="Markdown")
@@ -85,7 +88,8 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     count = int(args[2]) if len(args) > 2 and args[2].isdigit() else 100
     count = min(count, 500)
 
-    if not telethon_client or not telethon_client.is_connected():
+    client = await get_telethon_client()
+    if not client or not client.is_connected():
         await update.message.reply_text("❌ Reporting client is not ready. Check `/status`.")
         return
 
@@ -96,11 +100,11 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     async def do_reports():
         try:
-            entity = await telethon_client.get_entity(target)
+            entity = await client.get_entity(target)
             successful = 0
             for i in range(count):
                 try:
-                    await telethon_client.report(entity, reason=reason)
+                    await client.report(entity, reason=reason)
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(chat_id=user_id, text=f"⏳ Rate limited. Waiting {e.seconds} seconds...")
@@ -119,28 +123,21 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
-async def main():
-    if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING, WEBHOOK_URL]):
-        logging.error("Missing required environment variables!")
-        return
-
-    if not ALLOWED_USERS:
-        logging.warning("ALLOWED_USERS is empty! No one can use the bot.")
-
-    await start_telethon()
-
+# --- Main Entry Point (No nested loop) ---
+if __name__ == "__main__":
+    # Build the application
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("report", cmd_report))
 
-    logging.info("Starting webhook server...")
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=WEBHOOK_URL + "/" + BOT_TOKEN
-    )
+    # Delete any existing webhook and drop pending updates – prevents 409
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(app.bot.delete_webhook(drop_pending_updates=True))
+    loop.close()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    # Now start polling – this runs its own loop and won't conflict
+    logging.info("Bot starting with polling...")
+    app.run_polling(drop_pending_updates=True)
