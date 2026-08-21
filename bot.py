@@ -6,7 +6,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
-from telethon.tl.functions.messages import ReportRequest
+from telethon.tl.functions.messages import Report  # <-- FIXED IMPORT
 from telethon.tl.types import (
     InputReportReasonSpam,
     InputReportReasonOther,
@@ -14,7 +14,6 @@ from telethon.tl.types import (
     InputReportReasonPornography,
 )
 
-# --- Environment Variables ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH")
@@ -22,7 +21,6 @@ SESSION_STRING = os.environ.get("SESSION_STRING")
 ALLOWED_USERS = [int(x.strip()) for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()]
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 PORT = int(os.environ.get("PORT", 8443))
-# -----------------------------
 
 telethon_client = None
 logging.basicConfig(level=logging.INFO)
@@ -119,11 +117,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             successful = 0
             for i in range(count):
                 try:
-                    await client(ReportRequest(
-                        peer=entity,
-                        id=[],
-                        reason=get_report_reason(reason_str)
-                    ))
+                    await client(Report(peer=entity, id=[], reason=get_report_reason(reason_str)))  # <-- FIXED
                     successful += 1
                 except FloodWaitError as e:
                     await context.bot.send_message(chat_id=user_id, text=f"⏳ Rate limited. Waiting {e.seconds} seconds...")
@@ -142,9 +136,7 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(do_reports())
 
-# --- Main Entry (No nested loops) ---
 if __name__ == "__main__":
-    # Validate required environment variables
     if not all([BOT_TOKEN, API_ID, API_HASH, SESSION_STRING, WEBHOOK_URL]):
         logging.error("Missing required environment variables!")
         exit(1)
@@ -152,14 +144,12 @@ if __name__ == "__main__":
     if not ALLOWED_USERS:
         logging.warning("ALLOWED_USERS is empty! No one can use the bot.")
 
-    # Build the application
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("report", cmd_report))
 
     logging.info(f"Starting webhook server on port {PORT}...")
-    # This runs its own event loop – no nesting
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
