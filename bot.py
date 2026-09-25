@@ -167,15 +167,9 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     async def do_reports():
         try:
-            # Get entity using first available account
-            first_client = await get_telethon_client(0)
-            if not first_client:
-                await context.bot.send_message(chat_id=user_id, text="❌ Could not connect to first account.")
-                return
-
-            entity = await first_client.get_entity(target)
             successful = 0
             failed = 0
+            entities = {}  # Cache entities per account index to avoid refetching
 
             for i in range(count):
                 account_index = i % len(SESSION_STRINGS)
@@ -186,8 +180,12 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     continue
 
                 try:
+                    # Fetch entity for THIS specific client if not already fetched
+                    if account_index not in entities:
+                        entities[account_index] = await client.get_entity(target)
+                    
                     await client(functions.account.ReportPeerRequest(
-                        peer=entity,
+                        peer=entities[account_index],
                         reason=get_report_reason(reason_str),
                         message=""
                     ))
